@@ -1,0 +1,91 @@
+## *Practical Machine Learning Course Project*
+
+### Loading and Processing the Data
+
+We start with loading data with a read.csv2 function.  
+```{r,echo=FALSE,cache=TRUE}
+train<-read.csv2("pml-training.csv",sep=",")
+test<-read.csv2("pml-testing.csv",sep=",")
+```
+
+Once the data are loaded, we need to reduce the number of variables to proceed with predictive algorithms. With `r ncol(train)` variables of original training set any reasonable algorithm will take too much time to build a model.
+
+Let's first count NAs in different variables. 
+```{r, echo=FALSE,cache=TRUE}
+countNA<-as.data.frame(sapply(train,function(x){sum(is.na(x))}))
+countNA$var<-rownames(countNA)
+names(countNA)<-c("value","var")
+m<-as.matrix(summary(as.factor(countNA$value)))
+colnames(m)<-"# of variables"
+rownames(m)<-c("No NAs","With NAs")
+m
+```
+
+It follows from the table above that there're `r m[2,1]` variables with NAs. It turns out that each of this variables has exactly `r levels(as.factor(countNA$value))[2]` missing values. So, all variables with missing values are deleted.
+```{r,echo=F,cache=TRUE}
+rmv<-subset(countNA,value>0)$var
+train<-train[,!(names(train) %in% rmv)]
+```
+
+Then we do the same with missing values. 
+```{r, echo=FALSE,cache=TRUE}
+count.empty<-as.data.frame(sapply(train,function(x){sum(x=="")}))
+count.empty$var<-rownames(count.empty)
+names(count.empty)<-c("value","var")
+m2<-as.matrix(summary(as.factor(count.empty$value)))
+colnames(m2)<-"# of variables"
+rownames(m2)<-c("No empty","With empty")
+m2
+```
+
+It follows that there're `r m2[2,1]` variables with empty values. Moreover, each of this variables has exactly `r levels(as.factor(count.empty$value))[2]` empty entries. So, all variables with empty values are deleted as well.
+```{r,echo=F,cache=TRUE}
+rmv2<-subset(count.empty,value>0)$var
+train<-train[,!(names(train) %in% rmv2)]
+```
+
+Next we delete 'technical' variables (subject name, time window and time stamp), all they are a priori irrelevant to predicting how well exercises are done.
+```{r, echo=F,cache=TRUE}
+train<-subset(train,select=!grepl("timestamp|name|window",names(train)))
+train<-train[,-1]
+```
+
+So, we're left with a training dataset with `r ncol(train)` variables. One of the variables, 'classe', is a target factor variable, and all other variables are converted into numeric class.
+```{r, echo=F,cache=TRUE}
+for (i in 1:(ncol(train)-1)) {train[,i]<-as.numeric(as.character(train[,i]))}
+```
+
+### Fitting a model
+
+Given the nature of a problem under analysis, 'random forest' prediction model is a reasonable choice to perform our analysis. In order to reduce the computational time a random sample of 40% of observations from a training set is taken to estimate a model.
+```{r, echo=F,cache=TRUE,results='hide'}
+library(caret)
+intrain<-createDataPartition(y=train$classe,p=0.6,list=F)
+training<-train[intrain,]
+testing<-train[-intrain,]
+mod<-train(classe~.,data=testing,method="rf")
+```
+
+Here's a result of a model fit on a 40% subsample of a training set.
+```{r, echo=F,cache=T}
+print(mod)
+```
+
+The results are satsfactory, and comparison of predictions from a model on a 60% subsample of a training set with actual 'classe' values confirms it.
+```{r, echo=F,cache=T}
+table(predict(mod,training),training$classe)
+```
+
+We may use the estimated model to predict 'classe' values on a testing set. First we repeat transformations made on a training set for a testing set, and then apply the model. Here's a predicted result that matches actual testing 'classe' values.
+```{r, echo=F,cache=T}
+test<-test[,!(names(test) %in% rmv)]
+test<-test[,!(names(test) %in% rmv2)]
+test<-subset(test,select=!grepl("timestamp|name|window",names(test)))
+test<-test[,-1]
+for (i in 1:(ncol(test)-1)) {test[,i]<-as.numeric(as.character(test[,i]))}
+answers<-predict(mod,newdata=test)
+answers
+```
+
+
+
